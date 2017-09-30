@@ -1,9 +1,6 @@
 ﻿using UnityEngine;
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine.UI;
-using System;
 
 public class TileManager:MonoBehaviour {
 
@@ -17,13 +14,13 @@ public class TileManager:MonoBehaviour {
 			this.value = value;
 			this.space = space;
 
-			tileOBJ = (GameObject)Instantiate(Resources.Load<GameObject>(@"space"),this.space.position,Quaternion.identity);
+			tileOBJ = Instantiate(Resources.Load<GameObject>(@"Prefabs/space"),this.space.position,Quaternion.identity);
 			tileOBJ.GetComponent<SpriteRenderer>().color = new Color(Mathf.Log(value,2),Mathf.Log(value,2),-Mathf.Log(value,2),255f) / 20f;
 			tileOBJ.GetComponent<SpriteRenderer>().sortingOrder = 1;
 			tileOBJ.transform.localScale = Vector2.one * 0.85f;
 			tileOBJ.name = "Tile (" + this.space.position.x + "," + this.space.position.y + ")";
 
-			valueOBJ = (GameObject)Instantiate(Resources.Load<GameObject>(@"value"),tileOBJ.transform.position,Quaternion.identity);
+			valueOBJ = Instantiate(Resources.Load<GameObject>(@"Prefabs/value"),tileOBJ.transform.position,Quaternion.identity);
 			valueOBJ.transform.SetParent(tileOBJ.transform);
 			valueOBJ.transform.localScale = Vector2.one * 0.65f;
 			valueOBJ.transform.Find("Text").GetComponent<Text>().text = this.value + "";
@@ -79,7 +76,7 @@ public class TileManager:MonoBehaviour {
 		public Space(Vector2 position,TileManager tmRef) {
 			this.position = position;
 
-			spaceOBJ = (GameObject)Instantiate(Resources.Load<GameObject>(@"space"),this.position,Quaternion.identity);
+			spaceOBJ = Instantiate(Resources.Load<GameObject>(@"Prefabs/space"),this.position,Quaternion.identity);
 			spaceOBJ.GetComponent<SpriteRenderer>().color = new Color(50f,50f,50f,255f) / 255f;
 			spaceOBJ.name = "Space (" + this.position.x + "," + this.position.y + ")";
 
@@ -162,8 +159,8 @@ public class TileManager:MonoBehaviour {
 					openSpaces.Add(space);
 				}
 			}
-			Space chosenSpace = openSpaces[UnityEngine.Random.Range(0,openSpaces.Count)];
-			Tile newTile = new Tile((UnityEngine.Random.Range(0f,1f) < 0.9f ? 2 : 4),chosenSpace);
+			Space chosenSpace = openSpaces[Random.Range(0,openSpaces.Count)];
+			Tile newTile = new Tile((Random.Range(0f,1f) < 0.9f ? 2 : 4),chosenSpace);
 			chosenSpace.tile = newTile;
 		}
 	}
@@ -289,7 +286,9 @@ public class TileManager:MonoBehaviour {
 
 	float moveTimer = 0;
 	public void AI() {
-		moveTimer += 1 * Time.deltaTime;
+		float secondsBetweenMoves = 0.01f;
+		secondsBetweenMoves = (secondsBetweenMoves <= 0.01f ? 0.01f : secondsBetweenMoves);
+		moveTimer += (1f / secondsBetweenMoves) * Time.deltaTime;
 		if (moveTimer > 1) {
 			int shiftDirection = ShiftValueAnalysis();
 			if (shiftDirection >= 0 && shiftDirection <= 3) {
@@ -366,10 +365,7 @@ public class TileManager:MonoBehaviour {
 			*/
 		}
 
-		if (highestDirection == -1) {
-			print("Test");
-		}
-
+		/*
 		Vector2 tileWeightCenter = new Vector2(0,0);
 		float horizontalValueSum = 0;
 		float horizontalTotalValues = 0;
@@ -385,13 +381,16 @@ public class TileManager:MonoBehaviour {
 		}
 		tileWeightCenter = new Vector2(Mathf.RoundToInt(horizontalValueSum / horizontalTotalValues),Mathf.RoundToInt(verticalValueSum / verticalTotalValues));
 		print(highestDirection + " (" + highestDirectionValue + ") - " + mostTileCombinationDirection + " (" + mostTileCombinations + ")");
+		*/
 
 		highestDirection = mostTileCombinationDirection;
 
+		/*
 		GameObject.Find("CenterPositionVector").GetComponent<Text>().text = (tileWeightCenter.x) + "," + (tileWeightCenter.y);
 		GameObject.Find("WeightPoint").GetComponent<RectTransform>().localPosition = new Vector2(tileWeightCenter.x+100,tileWeightCenter.y+100);
 
 		validDirections.Clear();
+		*/
 		
 		return highestDirection;
 	}

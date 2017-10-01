@@ -1,6 +1,8 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine.UI;
+using System.IO;
 
 public class TileManager:MonoBehaviour {
 
@@ -96,6 +98,14 @@ public class TileManager:MonoBehaviour {
 
 			tmRef.score += tile.value;
 		}
+
+		public float GetValue() {
+			if (tile != null) {
+				return tile.value;
+			} else {
+				return 0;
+			}
+		}
 	}
 
 	public List<Space> spaces = new List<Space>();
@@ -107,6 +117,8 @@ public class TileManager:MonoBehaviour {
 	public void Awake() {
 		StartGame();
 	}
+
+	public NeuralNetwork nn;
 
 	void StartGame() {
 
@@ -122,6 +134,8 @@ public class TileManager:MonoBehaviour {
 			}
 			sortedSpaces.Add(innerSpaces);
 		}
+
+		nn = new NeuralNetwork(this, spaces);
 
 		for (int i = 0;i < spaces.Count;i++) {
 			Space space = spaces[i];
@@ -238,11 +252,18 @@ public class TileManager:MonoBehaviour {
 
 	private int score;
 	bool gameOver = false;
+	bool end = false;
+	private float runTimer = 0;
 
 	public void Update() {
 
-		if (!gameOver) {
-			AI();
+		if (runTimer > 1) {
+			if (!gameOver && !end) {
+				nn.Run();
+			}
+			runTimer = 0;
+		} else {
+			runTimer += 1000 * Time.deltaTime;
 		}
 
 		if (Input.GetKey(KeyCode.C)) {
@@ -268,19 +289,21 @@ public class TileManager:MonoBehaviour {
 			}
 		}
 
-		GameObject.Find("ScoreText").GetComponent<Text>().text = score.ToString();
+		GameObject.Find("ScoreText").GetComponent<Text>().text = score.ToString() + "\nIteration " + nn.networkStateIteration + " - " + nn.networkStateIndex + "\nBest " + (nn.previousBestNetworkState != null ? nn.previousBestNetworkState.score : 0);
 
 		if (gameOver) {
-			if (Input.GetKeyDown(KeyCode.R)) {
-				print("Game over!");
-				foreach (Space space in spaces) {
+			//if (Input.GetKeyDown(KeyCode.R)) {
+			//print("Game over!");
+			foreach (Space space in spaces) {
+				if (space.tile != null) {
 					space.tile.DestroyOBJs();
 					space.tile = null;
 				}
-				gameOver = false;
-				score = 0;
-				AddTiles(startTiles);
 			}
+			gameOver = false;
+			score = 0;
+			AddTiles(startTiles);
+			//}
 		}
 	}
 
@@ -298,13 +321,17 @@ public class TileManager:MonoBehaviour {
 		}
 	}
 
+	public List<bool> validDirections = new List<bool>();
+
 	public int ShiftValueAnalysis() {
+		validDirections.Clear();
+
 		int highestDirectionValue = 0;
 		int highestDirection = -1;
 		int mostTileCombinations = 0;
 		int mostTileCombinationDirection = -1;
 
-		List<bool> validDirections = new List<bool>();
+		
 
 		for (int i = 0;i < 4;i++) {
 			int directionValue = 0;
@@ -393,5 +420,344 @@ public class TileManager:MonoBehaviour {
 		*/
 		
 		return highestDirection;
+	}
+
+	public class NeuralNetwork {
+
+		public TileManager tileM;
+
+		public List<List<Node>> nodes = new List<List<Node>>();
+
+		public List<int> nodesPerLayer = new List<int>() {
+			16,
+			8,
+			//8,
+			//8,
+			4
+		};
+
+		Dictionary<int, float> outputValues = new Dictionary<int, float>();
+
+		public NeuralNetwork(TileManager tileM, List<Space> spaces) {
+			this.tileM = tileM;
+			for (int i = 0; i < nodesPerLayer.Count; i++) {
+				nodes.Add(new List<Node>());
+				for (int n = 0; n < nodesPerLayer[i]; n++) {
+					NodeTypes nodeType = (i == 0 ? NodeTypes.Input : (i == nodesPerLayer.Count - 1 ? NodeTypes.Output : NodeTypes.Hidden));
+					nodes[i].Add(new Node(this,nodeType,n,(i == 0 ? spaces[n] : null)));
+				}
+			}
+			ConnectNodes();
+			CreateVisual();
+		}
+
+		public void ConnectNodes() {
+			int layerIndex = 0;
+			foreach (List<Node> layer in nodes) {
+				connectionsByLayer.Add(layerIndex, new List<Connection>());
+				foreach (Node node in layer) {
+					if (layerIndex < nodes.Count - 1) {
+						foreach (Node outgoingNode in nodes[layerIndex + 1]) {
+							Connection newConnection = new Connection(node, outgoingNode);
+							node.outgoingConnections.Add(newConnection);
+							outgoingNode.incomingConnections.Add(newConnection);
+							connectionsByLayer[layerIndex].Add(newConnection);
+						}
+					}
+				}
+				layerIndex += 1;
+			}
+		}
+
+		public void Run() {
+			float largestTileValue = Mathf.Log(Mathf.RoundToInt(tileM.spaces.Max(space => space.GetValue())), 2);
+			foreach (List<Node> layer in nodes) {
+				int nodeIndex = 0;
+				foreach (Node node in layer) {
+					if (node.nodeType == NodeTypes.Input) {
+						if (node.connectedSpace.GetValue() == 0) {
+							node.value = 0;
+						} else {
+							node.value = Mathf.Log(node.connectedSpace.GetValue(), 2) / largestTileValue;
+						}
+					} else if (node.nodeType == NodeTypes.Output) {
+						node.AddIncomingValues(false);
+						outputValues.Add(nodeIndex, node.value);
+					} else {
+						node.AddIncomingValues(true);
+					}
+					nodeIndex += 1;
+				}
+			}
+			tileM.ShiftValueAnalysis();
+			ChooseMove();
+			UpdateVisual();
+		}
+
+		private int invalidMoveCount = 0;
+
+		public void ChooseMove() {
+			KeyValuePair<int, float> highestKVP = new KeyValuePair<int, float>(0, outputValues[0]);
+			foreach (KeyValuePair<int, float> outputNodeKVP in outputValues) {
+				if (outputNodeKVP.Value > highestKVP.Value) {
+					highestKVP = outputNodeKVP;
+				}
+			}
+			tileM.ShiftBoard(highestKVP.Key);
+			if (!tileM.validDirections[highestKVP.Key]) {
+				invalidMoveCount += 1;
+				if (invalidMoveCount > /*10*/0) {
+					tileM.gameOver = true;
+					invalidMoveCount = 0;
+					tileM.end = !AddNetworkState();
+				}
+			} else {
+				invalidMoveCount = 0;
+			}
+			outputValues.Clear();
+		}
+
+		public enum NodeTypes { Input,Hidden,Output };
+
+		public class Node {
+
+			public NeuralNetwork nn;
+
+			public NodeTypes nodeType;
+			public Space connectedSpace = null;
+
+			public int layerIndex;
+
+			public float value = 0;
+
+			public List<Connection> incomingConnections = new List<Connection>();
+			public List<Connection> outgoingConnections = new List<Connection>();
+
+			public UINode uiNode;
+
+			public Node(NeuralNetwork nn, NodeTypes nodeType, int layerIndex, Space connectedSpace) {
+				this.nn = nn;
+				this.nodeType = nodeType;
+				this.layerIndex = layerIndex;
+				if (nodeType == NodeTypes.Input) {
+					this.connectedSpace = connectedSpace;
+				}
+			}
+
+			public static float SquashValue(float preSquashValue) {
+				float e = 2.71828f;
+				return (((Mathf.Pow(e, preSquashValue)) / (Mathf.Pow(e, preSquashValue) + 1)) - 0.5f);
+			}
+
+			public void AddIncomingValues(bool squash) {
+				value = 0;
+				foreach (Connection connection in incomingConnections) {
+					value += connection.originNode.value * connection.weight;
+				}
+				if (squash) {
+					value = SquashValue(value);
+				}
+			}
+		}
+
+		public Dictionary<int, List<Connection>> connectionsByLayer = new Dictionary<int, List<Connection>>();
+
+		public class Connection {
+			public Node originNode;
+			public Node destinationNode;
+
+			public float weight;
+
+			public GameObject uiConnectionObj;
+
+			public Connection(Node originNode, Node destinationNode) {
+				this.originNode = originNode;
+				this.destinationNode = destinationNode;
+				weight = Random.Range(-1f, 1f);
+			}
+		}
+
+		private int totalIterations = 100;
+		private int networkStatesPerIteration = 100;
+		public int networkStateIteration = 0;
+		public int networkStateIndex = 0;
+
+		public NetworkState previousBestNetworkState = null;
+
+		public Dictionary<int, List<NetworkState>> networkStateIterations = new Dictionary<int, List<NetworkState>>();
+
+		public bool AddNetworkState() {
+			if (networkStateIteration >= totalIterations) {
+				return false;
+			}
+			if (networkStateIterations.ContainsKey(networkStateIteration)) {
+				networkStateIterations[networkStateIteration].Add(new NetworkState(this, tileM.score));
+			} else {
+				networkStateIterations.Add(networkStateIteration, new List<NetworkState>() { new NetworkState(this, tileM.score) });
+			}
+			networkStateIndex += 1;
+			if (networkStateIndex >= networkStatesPerIteration) {
+				NetworkState bestScoreNetworkState = networkStateIterations[networkStateIteration].OrderByDescending(ns => ns.score).ToList()[0];
+				bool save = true;
+				if (previousBestNetworkState != null && bestScoreNetworkState.score < previousBestNetworkState.score) {
+					bestScoreNetworkState = previousBestNetworkState;
+					save = false;
+				}
+				string stateString = networkStateIteration.ToString();
+				foreach (KeyValuePair<int, List<Connection>> connectionsByLayerKVP in connectionsByLayer) {
+					int connectionIndex = 0;
+					stateString += "\n" + connectionsByLayerKVP.Key;
+					foreach (Connection connection in connectionsByLayerKVP.Value) {
+						connection.weight = bestScoreNetworkState.connectionWeights[connectionsByLayerKVP.Key][connectionIndex];
+						connectionIndex += 1;
+						stateString += " - " + connectionIndex + " " + connection.weight;
+						/*
+						if (save) {
+							System.DateTime now = System.DateTime.Now;
+							string dateTime = now.Year + "" + now.Month + "" + now.Day + "" + now.Hour + "" + now.Minute + "" + now.Second + "" + now.Millisecond;
+							string fileName = Application.persistentDataPath + "/Data/data-" + networkStateIteration + "-" + networkStateIndex + "-" + dateTime + ".txt";
+							FileStream settingsFile = new FileStream(fileName, FileMode.Create);
+						}
+						*/
+					}
+				}
+				print(stateString);
+				previousBestNetworkState = bestScoreNetworkState;
+				networkStateIndex = 0;
+				networkStateIteration += 1;
+				networkStateIterations.Clear();
+			} else {
+				foreach (KeyValuePair<int, List<Connection>> connectionsByLayerKVP in connectionsByLayer) {
+					int connectionIndex = 0;
+					foreach (Connection connection in connectionsByLayerKVP.Value) {
+						if (previousBestNetworkState != null) {
+							connection.weight = previousBestNetworkState.connectionWeights[connectionsByLayerKVP.Key][connectionIndex] + Random.Range(-0.1f, 0.1f);
+						} else {
+							connection.weight += Random.Range(-0.1f, 0.1f);
+							//connection.weight = Node.SquashValue(connection.weight);
+						}
+						connectionIndex += 1;
+					}
+				}
+			}
+			return true;
+		}
+
+		public class NetworkState {
+			public NeuralNetwork nn;
+
+			public int score;
+			public Dictionary<int, List<float>> connectionWeights = new Dictionary<int, List<float>>();
+
+			public NetworkState(NeuralNetwork nn, int score) {
+				this.nn = nn;
+				this.score = score;
+				foreach (KeyValuePair<int, List<Connection>> layerConnectionsKVP in nn.connectionsByLayer) {
+					connectionWeights.Add(layerConnectionsKVP.Key, new List<float>());
+					foreach (Connection connection in layerConnectionsKVP.Value) {
+						connectionWeights[layerConnectionsKVP.Key].Add(connection.weight);
+					}
+				}
+			}
+
+			public void AddConnectionWeight(int layerIndex, float weight) {
+				if (connectionWeights.ContainsKey(layerIndex)) {
+					connectionWeights[layerIndex].Add(weight);
+				} else {
+					connectionWeights.Add(layerIndex, new List<float>() { weight });
+				}
+			}
+		}
+
+		public class UILayer {
+			public List<UINode> uiNodes = new List<UINode>();
+			public GameObject obj;
+			public GameObject connectionObj;
+			public UILayer(List<Node> nodes, Transform parent, int layerIndex) {
+				obj = Instantiate(Resources.Load<GameObject>(@"UI/UILayer"), parent, false);
+				int nodeIndex = 0;
+				foreach (Node node in nodes) {
+					uiNodes.Add(new UINode(node, obj.transform, this, nodeIndex, layerIndex));
+					nodeIndex += 1;
+				}
+			}
+		}
+
+		public class UINode {
+			public Node node;
+			public GameObject obj;
+			public List<UIConnection> uiConnections = new List<UIConnection>();
+			public UILayer uiLayer;
+			public List<float> differenceVectorMagnitudes = new List<float>();
+			public UINode(Node node,Transform parent,UILayer uiLayer, int nodeIndex, int layerIndex) {
+				this.node = node;
+				node.uiNode = this;
+				this.uiLayer = uiLayer;
+				obj = Instantiate(Resources.Load<GameObject>(@"UI/UINode"), GameObject.Find("NN-Panel").transform/*parent*/, false);
+				obj.GetComponent<RectTransform>().anchoredPosition = new Vector2(layerIndex * (300f / node.nn.nodesPerLayer.Count) + ((300f / node.nn.nodesPerLayer.Count) / 2f), nodeIndex * (500f / node.nn.nodesPerLayer[layerIndex]) + ((500f / node.nn.nodesPerLayer[layerIndex]) / 2f));
+				foreach (Connection connection in node.incomingConnections) {
+					GameObject connectionObj = Instantiate(Resources.Load<GameObject>(@"UI/UIConnection"), GameObject.Find("Canvas").transform, false);
+					RectTransform imageRectTransform = connectionObj.GetComponent<RectTransform>();
+
+					Vector3 pointA = connection.originNode.uiNode.obj.transform.position;
+					Vector3 pointB = obj.transform.position;
+
+					Vector3 differenceVector = pointB - pointA;
+					differenceVectorMagnitudes.Add(differenceVector.magnitude);
+
+					imageRectTransform.sizeDelta = new Vector2(differenceVector.magnitude, Mathf.Abs(connection.weight));
+					imageRectTransform.pivot = new Vector2(0, 0.5f);
+					imageRectTransform.position = pointA;
+
+					float angle = Mathf.Atan2(differenceVector.y, differenceVector.x) * Mathf.Rad2Deg;
+					imageRectTransform.rotation = Quaternion.Euler(0, 0, angle);
+
+					connection.uiConnectionObj = connectionObj;
+					uiConnections.Add(new UIConnection(connection,connectionObj));
+				}
+			}
+		}
+
+		public class UIConnection {
+			public Connection connection;
+			public GameObject obj;
+			public UIConnection(Connection connection, GameObject obj) {
+				this.connection = connection;
+				this.obj = obj;
+			}
+		}
+
+		public List<UILayer> uiNN = new List<UILayer>();
+
+		public void CreateVisual() {
+			int layerIndex = 0;
+			foreach (List<Node> layer in nodes) {
+				uiNN.Add(new UILayer(layer, GameObject.Find("NN-Panel").transform,layerIndex));
+				layerIndex += 1;
+			}
+			foreach (UILayer uiLayer in uiNN) {
+				foreach (UINode uiNode in uiLayer.uiNodes) {
+					foreach (UIConnection uiConnection in uiNode.uiConnections) {
+						uiConnection.obj.transform.SetSiblingIndex(0);
+					}
+				}
+			}
+		}
+
+		public void UpdateVisual() {
+			foreach (UILayer uiLayer in uiNN) {
+				foreach (UINode uiNode in uiLayer.uiNodes) {
+					uiNode.obj.GetComponent<Image>().color = Color.Lerp(Color.red, Color.green, (uiNode.node.value / 2f) + 0.5f);
+					uiNode.obj.transform.Find("Value").GetComponent<Text>().text = System.Math.Round(uiNode.node.value,2).ToString();
+					int connectionIndex = 0;
+					foreach (UIConnection uiConnection in uiNode.uiConnections) {
+						uiConnection.obj.GetComponent<Image>().color = Color.Lerp(Color.red, Color.green, (uiConnection.connection.weight / 2f) + 0.5f);
+						uiConnection.obj.GetComponent<RectTransform>().sizeDelta = new Vector2(uiNode.differenceVectorMagnitudes[connectionIndex], Mathf.Abs(uiNode.node.incomingConnections[connectionIndex].weight));
+						uiConnection.obj.transform.Find("Value").GetComponent<Text>().text = System.Math.Round(uiConnection.connection.weight,2).ToString();
+						connectionIndex += 1;
+					}
+				}
+			}
+		}
 	}
 }

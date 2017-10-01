@@ -603,14 +603,14 @@ public class TileManager:MonoBehaviour {
 					bestScoreNetworkState = previousBestNetworkState;
 					save = false;
 				}
-				string stateString = networkStateIteration.ToString();
+				string stateString = networkStateIteration.ToString() + " " + bestScoreNetworkState.score;
 				foreach (KeyValuePair<int, List<Connection>> connectionsByLayerKVP in connectionsByLayer) {
 					int connectionIndex = 0;
 					stateString += "\n" + connectionsByLayerKVP.Key;
 					foreach (Connection connection in connectionsByLayerKVP.Value) {
 						connection.weight = bestScoreNetworkState.connectionWeights[connectionsByLayerKVP.Key][connectionIndex];
 						connectionIndex += 1;
-						stateString += " - " + connectionIndex + " " + connection.weight;
+						stateString += "`" + connectionIndex + ":" + connection.weight;
 						/*
 						if (save) {
 							System.DateTime now = System.DateTime.Now;
@@ -630,11 +630,12 @@ public class TileManager:MonoBehaviour {
 				foreach (KeyValuePair<int, List<Connection>> connectionsByLayerKVP in connectionsByLayer) {
 					int connectionIndex = 0;
 					foreach (Connection connection in connectionsByLayerKVP.Value) {
+						float changeValue = Random.Range(-1f, 1f) * (1 - (networkStateIteration / totalIterations));
 						if (previousBestNetworkState != null) {
-							connection.weight = previousBestNetworkState.connectionWeights[connectionsByLayerKVP.Key][connectionIndex] + Random.Range(-0.1f, 0.1f);
+							connection.weight = previousBestNetworkState.connectionWeights[connectionsByLayerKVP.Key][connectionIndex] + changeValue;
 						} else {
-							connection.weight += Random.Range(-0.1f, 0.1f);
-							//connection.weight = Node.SquashValue(connection.weight);
+							connection.weight += changeValue;
+							connection.weight = Node.SquashValue(connection.weight);
 						}
 						connectionIndex += 1;
 					}
@@ -705,7 +706,7 @@ public class TileManager:MonoBehaviour {
 					Vector3 differenceVector = pointB - pointA;
 					differenceVectorMagnitudes.Add(differenceVector.magnitude);
 
-					imageRectTransform.sizeDelta = new Vector2(differenceVector.magnitude, Mathf.Abs(connection.weight));
+					imageRectTransform.sizeDelta = new Vector2(differenceVector.magnitude, Mathf.Abs(connection.weight) * 5f);
 					imageRectTransform.pivot = new Vector2(0, 0.5f);
 					imageRectTransform.position = pointA;
 
@@ -752,7 +753,7 @@ public class TileManager:MonoBehaviour {
 					int connectionIndex = 0;
 					foreach (UIConnection uiConnection in uiNode.uiConnections) {
 						uiConnection.obj.GetComponent<Image>().color = Color.Lerp(Color.red, Color.green, (uiConnection.connection.weight / 2f) + 0.5f);
-						uiConnection.obj.GetComponent<RectTransform>().sizeDelta = new Vector2(uiNode.differenceVectorMagnitudes[connectionIndex], Mathf.Abs(uiNode.node.incomingConnections[connectionIndex].weight));
+						uiConnection.obj.GetComponent<RectTransform>().sizeDelta = new Vector2(uiNode.differenceVectorMagnitudes[connectionIndex], Mathf.Abs(uiNode.node.incomingConnections[connectionIndex].weight) * 5f);
 						uiConnection.obj.transform.Find("Value").GetComponent<Text>().text = System.Math.Round(uiConnection.connection.weight,2).ToString();
 						connectionIndex += 1;
 					}

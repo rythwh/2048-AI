@@ -598,10 +598,10 @@ public class TileManager:MonoBehaviour {
 			networkStateIndex += 1;
 			if (networkStateIndex >= networkStatesPerIteration) {
 				NetworkState bestScoreNetworkState = networkStateIterations[networkStateIteration].OrderByDescending(ns => ns.score).ToList()[0];
-				bool save = true;
+				//bool save = true;
 				if (previousBestNetworkState != null && bestScoreNetworkState.score < previousBestNetworkState.score) {
 					bestScoreNetworkState = previousBestNetworkState;
-					save = false;
+					//save = false;
 				}
 				string stateString = networkStateIteration.ToString() + " " + bestScoreNetworkState.score;
 				foreach (KeyValuePair<int, List<Connection>> connectionsByLayerKVP in connectionsByLayer) {

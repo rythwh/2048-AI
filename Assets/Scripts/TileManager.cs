@@ -18,7 +18,9 @@ public class TileManager:MonoBehaviour {
 		System.DateTime now = System.DateTime.Now;
 		string dateTime = now.Year + "y" + now.Month + "m" + now.Day + "d" + now.Hour + "h" + now.Minute + "m" + now.Second + "s" + now.Millisecond + "m";
 		outputFile = new StreamWriter(Application.persistentDataPath + "/data_" + dateTime + ".txt");
+	}
 
+	public void Start() {
 		StartGame();
 	}
 
@@ -33,7 +35,7 @@ public class TileManager:MonoBehaviour {
 			this.space = space;
 
 			tileOBJ = Instantiate(Resources.Load<GameObject>(@"Prefabs/space"),this.space.position,Quaternion.identity);
-			tileOBJ.GetComponent<SpriteRenderer>().color = new Color(Mathf.Log(value,2),Mathf.Log(value,2),-Mathf.Log(value,2),255f) / 20f;
+			tileOBJ.GetComponent<SpriteRenderer>().color = new Color(Mathf.Log(value,2),Mathf.Log(value,2),Mathf.Log(value,2),255f) / 20f;
 			tileOBJ.GetComponent<SpriteRenderer>().sortingOrder = 1;
 			tileOBJ.transform.localScale = Vector2.one * 0.85f;
 			tileOBJ.name = "Tile (" + this.space.position.x + "," + this.space.position.y + ")";
@@ -95,7 +97,8 @@ public class TileManager:MonoBehaviour {
 			this.position = position;
 
 			spaceOBJ = Instantiate(Resources.Load<GameObject>(@"Prefabs/space"),this.position,Quaternion.identity);
-			spaceOBJ.GetComponent<SpriteRenderer>().color = new Color(50f,50f,50f,255f) / 255f;
+			spaceOBJ.GetComponent<SpriteRenderer>().color = new Color(145f,111f,78f,255f) / 255f;
+			spaceOBJ.transform.localScale = Vector2.one * 0.95f;
 			spaceOBJ.name = "Space (" + this.position.x + "," + this.position.y + ")";
 
 			this.tmRef = tmRef;
@@ -194,13 +197,13 @@ public class TileManager:MonoBehaviour {
 
 		List<List<Space>> usedList = sortedSpaces;
 
-		for (int i = 0;i < direction+2;i++) {
+		for (int i = 0; i < direction + 2; i++) {
 			usedList = RotateBoard90(usedList);
 		}
 		bool moved = false;
-		foreach(List<Space> row in usedList) {
+		foreach (List<Space> row in usedList) {
 			foreach (Space space in row) {
-				if(space.tile != null) {
+				if (space.tile != null) {
 					Space currentSpace = space;
 					while(currentSpace.surroundingSpaces[direction] != null && currentSpace.surroundingSpaces[direction].tile == null) {
 						moved = true;
@@ -225,6 +228,9 @@ public class TileManager:MonoBehaviour {
 		if (moved) {
 			AddTiles(1);
 		}
+
+		uiM.UpdateScore();
+		uiM.UpdateNNScore();
 
 		return CheckGameOver();
 	}
@@ -262,12 +268,13 @@ public class TileManager:MonoBehaviour {
 	}
 
 	public int score = 0;
+	public int highScore = 0;
 	public bool gameOver = false;
 	public bool end = false;
 	private float runTimer = 0;
 
-	bool nnEnable = false;
-	bool mtcEnable = false;
+	public bool nnEnable = false;
+	public bool mtcEnable = false;
 
 	public void Update() {
 
@@ -322,27 +329,36 @@ public class TileManager:MonoBehaviour {
 			}
 		}
 
-		GameObject.Find("ScoreText").GetComponent<Text>().text = score.ToString() + "\nIteration " + nnM.nn.networkStateIteration + " - " + nnM.nn.networkStateIndex + "\nBest " + (nnM.nn.previousBestNetworkState != null ? nnM.nn.previousBestNetworkState.score : 0);
-
 		if (gameOver) {
-			//if (Input.GetKeyDown(KeyCode.R)) {
-			//print("Game over!");
-			foreach (Space space in spaces) {
-				if (space.tile != null) {
-					space.tile.DestroyOBJs();
-					space.tile = null;
+			if (nnEnable || mtcEnable) {
+				ResetBoard();
+			} else {
+				if (Input.GetKeyDown(KeyCode.R)) {
+					//print("Game over!");
+					ResetBoard();
 				}
 			}
-			gameOver = false;
-			print(score);
-			outputFile.WriteLine(score);
-			score = 0;
-			AddTiles(startTiles);
-			//}
 		}
 		if (end) {
 			outputFile.Close();
 		}
+	}
+
+	public void ResetBoard() {
+		foreach (Space space in spaces) {
+			if (space.tile != null) {
+				space.tile.DestroyOBJs();
+				space.tile = null;
+			}
+		}
+		gameOver = false;
+		//print(score);
+		outputFile.WriteLine(score);
+		if (score > highScore) {
+			highScore = score;
+		}
+		score = 0;
+		AddTiles(startTiles);
 	}
 
 	float moveTimer = 0;

@@ -40,7 +40,7 @@ public class UIManager : MonoBehaviour {
 			obj = Instantiate(Resources.Load<GameObject>(@"UI/UINode"), GameObject.Find("NN-Panel").transform/*parent*/, false);
 			obj.GetComponent<RectTransform>().anchoredPosition = new Vector2(layerIndex * (300f / node.nn.nodesPerLayer.Count) + ((300f / node.nn.nodesPerLayer.Count) / 2f), nodeIndex * (500f / node.nn.nodesPerLayer[layerIndex]) + ((500f / node.nn.nodesPerLayer[layerIndex]) / 2f));
 			foreach (NNManager.NeuralNetwork.Connection connection in node.incomingConnections) {
-				GameObject connectionObj = Instantiate(Resources.Load<GameObject>(@"UI/UIConnection"), GameObject.Find("Canvas").transform, false);
+				GameObject connectionObj = Instantiate(Resources.Load<GameObject>(@"UI/UIConnection"), GameObject.Find("NN-Panel").transform, false);
 				RectTransform imageRectTransform = connectionObj.GetComponent<RectTransform>();
 
 				Vector3 pointA = connection.originNode.uiNode.obj.transform.position;
@@ -102,5 +102,13 @@ public class UIManager : MonoBehaviour {
 				}
 			}
 		}
+	}
+
+	public void UpdateScore() {
+		GameObject.Find("Score-Text").GetComponent<Text>().text = "Score \t" + tileM.score + "\n" + "High Score \t" + tileM.highScore + "\n" + (tileM.nnEnable ? "AI - Neural Network Mode" : tileM.mtcEnable ? "AI - Maximum Tile Combinations Mode" : "Manual Play");
+	}
+
+	public void UpdateNNScore() {
+		GameObject.Find("NNScore-Text").GetComponent<Text>().text = tileM.score.ToString() + "\nIteration " + nnM.nn.networkStateIteration + " - " + nnM.nn.networkStateIndex + "\nBest " + (nnM.nn.previousBestNetworkState != null ? nnM.nn.previousBestNetworkState.score : 0);
 	}
 }
